@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+*.local
+
+# Runtime artifacts
+*.db
+backend/uploads/*
+!backend/uploads/.gitkeep
+.env
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
