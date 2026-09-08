@@ -1,0 +1,13 @@
+# NER LandslideAI - Backend dependencies
+# Install:  pip install -r requirements.txt
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sqlalchemy>=2.0
+pydantic>=2.6
+python-multipart>=0.0.9
+email-validator>=2.1
+# scikit-learn is part of the target stack. The current prototype uses a
+# transparent hybrid rule-based risk engine (ml/risk_engine.py); this
+# dependency is reserved for the future trained-model engine described in
+# ml/risk_engine.py (ML INTEGRATION POINT comment).
+scikit-learn>=1.3
