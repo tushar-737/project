@@ -11,3 +11,4 @@ email-validator>=2.1
 # dependency is reserved for the future trained-model engine described in
 # ml/risk_engine.py (ML INTEGRATION POINT comment).
 scikit-learn>=1.3
+requests

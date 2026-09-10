@@ -13,6 +13,8 @@ from ..models import EnvironmentalData, Location
 from ..schemas.environment import EnvironmentalDataOut
 from .deps import get_current_user
 from ..services.pipeline import run_risk_pipeline
+from ..services.weather_service import get_weather_sample
+from ..services.forecast_service import get_risk_forecast
 
 router = APIRouter(prefix="/environment", tags=["environment"])
 
@@ -78,3 +80,96 @@ def ingest_sensor_reading(
         "alert_generated": result["alert_generated"],
         "priority_level": result["priority"].priority_level if result["priority"] else None,
     }
+@router.post("/fetch-live-weather/{location_id}")
+def fetch_live_weather(
+    location_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """
+    Fetch real weather data for a location and run
+    the existing landslide risk prediction pipeline.
+    """
+
+    location = db.get(Location, location_id)
+
+    if not location:
+        raise HTTPException(
+            status_code=404,
+            detail="Location not found",
+        )
+
+    try:
+        # Fetch real weather data using location coordinates
+        sample = get_weather_sample(location)
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Unable to fetch live weather data: {str(exc)}",
+        )
+
+    # Run the existing complete pipeline
+    result = run_risk_pipeline(
+        db,
+        location,
+        sample,
+    )
+
+    return {
+        "source": "OPEN_METEO",
+        "location": {
+            "id": location.id,
+            "name": location.name,
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+        },
+        "environment": EnvironmentalDataOut.model_validate(
+            result["environment"]
+        ),
+        "risk": result["risk"].as_dict(),
+        "alert_generated": result["alert_generated"],
+        "priority_level": (
+            result["priority"].priority_level
+            if result["priority"]
+            else None
+        ),
+        "steps": result["steps"],
+    }
+@router.get("/forecast/{location_id}")
+def get_forecast(
+    location_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """
+    Get 24-hour and 48-hour
+    landslide risk forecasts.
+    """
+
+    location = db.get(Location, location_id)
+
+    if not location:
+        raise HTTPException(
+            status_code=404,
+            detail="Location not found",
+        )
+
+    try:
+        forecast = get_risk_forecast(location)
+
+        return {
+            "location": {
+                "id": location.id,
+                "name": location.name,
+                "latitude": location.latitude,
+                "longitude": location.longitude,
+            },
+            **forecast,
+        }
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Unable to generate forecast: {str(exc)}",
+        )
