@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Location, RiskPrediction
+from ..ml.risk_model import predict_landslide_risk
 from ..schemas.environment import EnvironmentalDataOut
 from ..schemas.location import LocationOut
 from ..schemas.risk import RiskPredictionOut
@@ -102,8 +103,129 @@ def risk_trend(db: Session = Depends(get_db)):
          "samples": len(v), "max_score": round(max(v), 1)}
         for key, v in sorted(buckets.items())
     ]
+@router.post("/{location_id}/predict")
+def predict_location_risk(
+    location_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Run the ML risk engine using the latest environmental
+    data available for this location.
+    """
 
+    location = db.get(Location, location_id)
 
+    if not location:
+        raise HTTPException(
+            status_code=404,
+            detail="Location not found",
+        )
+
+    # Get latest environmental data
+    env_map = latest_environment_by_location(db)
+    env = env_map.get(location_id)
+
+    if not env:
+        raise HTTPException(
+            status_code=404,
+            detail="No environmental data available for this location",
+        )
+
+    # Run ML prediction
+    result = predict_landslide_risk(
+        rainfall=env.rainfall or 0,
+        soil_moisture=env.soil_moisture or 0,
+        slope_angle=env.slope_angle or location.slope_angle or 0,
+    )
+
+    # Save prediction in database
+    prediction = RiskPrediction(
+        location_id=location_id,
+        risk_score=result["risk_score"],
+        risk_level=result["risk_level"],
+        confidence=result["confidence"],
+        contributing_factors=str(result["contributing_factors"]),
+    )
+
+    db.add(prediction)
+    db.commit()
+    db.refresh(prediction)
+
+    return {
+        "location": location.name,
+        "location_id": location.id,
+        "prediction": RiskPredictionOut.from_row(prediction),
+    }
+@router.post("/predict-all")
+def predict_all_locations(
+    db: Session = Depends(get_db),
+):
+    """
+    Run the ML risk prediction for all active locations
+    using their latest environmental data.
+    """
+
+    locations = (
+        db.query(Location)
+        .filter(Location.is_active.is_(True))
+        .all()
+    )
+
+    env_map = latest_environment_by_location(db)
+
+    results = []
+    skipped = []
+
+    for location in locations:
+
+        env = env_map.get(location.id)
+
+        # Skip locations with no environmental data
+        if not env:
+            skipped.append({
+                "location_id": location.id,
+                "name": location.name,
+                "reason": "No environmental data",
+            })
+            continue
+
+        # Run ML model
+        result = predict_landslide_risk(
+            rainfall=env.rainfall or 0,
+            soil_moisture=env.soil_moisture or 0,
+            slope_angle=env.slope_angle or location.slope_angle or 0,
+        )
+
+        # Create database prediction
+        prediction = RiskPrediction(
+            location_id=location.id,
+            risk_score=result["risk_score"],
+            risk_level=result["risk_level"],
+            confidence=result["confidence"],
+            contributing_factors=str(
+                result["contributing_factors"]
+            ),
+        )
+
+        db.add(prediction)
+
+        results.append({
+            "location_id": location.id,
+            "location": location.name,
+            "risk_score": result["risk_score"],
+            "risk_level": result["risk_level"],
+        })
+
+    # Save all predictions together
+    db.commit()
+
+    return {
+        "message": "ML prediction completed",
+        "locations_processed": len(results),
+        "locations_skipped": len(skipped),
+        "predictions": results,
+        "skipped": skipped,
+    }
 @router.get("/{location_id}/history")
 def risk_history(
     location_id: int,

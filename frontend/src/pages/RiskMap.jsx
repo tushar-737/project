@@ -160,25 +160,69 @@ export default function RiskMap() {
             </div>
           </Card>
 
-          <Card title="Legend">
-            <ul className="space-y-1.5 text-xs">
-              {RISK_LEVELS.map((l) => (
-                <li key={l} className="flex items-center gap-2 font-semibold text-slate-700">
-                  <span className="h-3 w-3 rounded-full" style={{ background: RISK_META[l].color }} />
-                  {l}
-                  <span className="ml-auto tabular-nums text-slate-400">{counts[l]}</span>
-                </li>
-              ))}
-            </ul>
-            <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
-              {Object.entries(ROAD_META).map(([k, m]) => (
-                <li key={k} className="flex items-center gap-2 font-semibold text-slate-700">
-                  <span className="h-1 w-6 rounded" style={{ background: m.color }} />
-                  {m.label}
-                </li>
-              ))}
-            </ul>
-          </Card>
+         <Card title="Legend">
+  {/* Risk Levels */}
+  <ul className="space-y-1.5 text-xs">
+    {RISK_LEVELS.map((l) => (
+      <li
+        key={l}
+        className="flex items-center gap-2 font-semibold text-slate-700"
+      >
+        <span
+          className="h-3 w-3 rounded-full"
+          style={{ background: RISK_META[l].color }}
+        />
+
+        {l}
+
+        <span className="ml-auto tabular-nums text-slate-400">
+          {counts[l]}
+        </span>
+      </li>
+    ))}
+  </ul>
+
+  {/* Roads */}
+  <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
+    {Object.entries(ROAD_META).map(([k, m]) => (
+      <li
+        key={k}
+        className="flex items-center gap-2 font-semibold text-slate-700"
+      >
+        <span
+          className="h-1 w-6 rounded"
+          style={{ background: m.color }}
+        />
+
+        {m.label}
+      </li>
+    ))}
+  </ul>
+
+  {/* Citizen Reports */}
+  <div className="mt-3 border-t border-slate-100 pt-3">
+    <p className="mb-2 text-xs font-extrabold uppercase tracking-wide text-slate-500">
+      Citizen Reports
+    </p>
+
+    <div className="space-y-1.5 text-xs text-slate-700">
+      <div className="flex items-center gap-2">
+        <span className="h-3 w-3 rounded-full bg-amber-500" />
+        <span>⏳ Pending Report</span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="h-3 w-3 rounded-full bg-green-600" />
+        <span>✓ Verified Report</span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="h-3 w-3 rounded-full bg-slate-400" />
+        <span>✕ Rejected Report</span>
+      </div>
+    </div>
+  </div>
+</Card>
 
           {(errorZones || (loading && !zones)) && (
             <Card>
@@ -237,6 +281,15 @@ export default function RiskMap() {
                         {r.image_url && (
                           <img src={r.image_url} alt="report" className="mb-2 h-28 w-full rounded-lg object-cover" />
                         )}
+                        {r.video_url && (
+  <video
+    src={r.video_url}
+    controls
+    className="mb-2 h-32 w-full rounded-lg object-cover"
+  >
+    Your browser does not support the video tag.
+  </video>
+)}
                         <p className="text-xs text-slate-600">{r.description}</p>
                         <p className="mt-2 text-[10px] text-slate-400">
                           {r.reporter_name || 'Anonymous'} · {fmtDate(r.created_at)}

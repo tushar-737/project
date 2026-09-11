@@ -22,6 +22,10 @@ class Report(Base):
     latitude: Mapped[float] = mapped_column(Float)
     longitude: Mapped[float] = mapped_column(Float)
     image_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    video_path: Mapped[str | None] = mapped_column(
+    String(300),
+    nullable=True
+)
     # PENDING | VERIFIED | REJECTED
     status: Mapped[str] = mapped_column(String(20), default="PENDING")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

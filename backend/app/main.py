@@ -75,6 +75,7 @@ from .api import (
     risk,
     roads,
     simulation,
+    ml,
 )
 
 
@@ -93,6 +94,7 @@ for module in (
     simulation,
     dashboard,
     gis,
+    ml,
 ):
     app.include_router(module.router, prefix=API_PREFIX)
 

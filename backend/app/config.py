@@ -26,3 +26,10 @@ TOKEN_TTL_HOURS = 24
 
 MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+# Video upload settings
+MAX_VIDEO_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
+
+ALLOWED_VIDEO_EXTENSIONS = {
+    ".mp4",
+    ".webm",
+}

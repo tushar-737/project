@@ -5,7 +5,13 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
-from ..config import ALLOWED_IMAGE_EXTENSIONS, MAX_IMAGE_SIZE_BYTES, UPLOAD_DIR
+from ..config import (
+    ALLOWED_IMAGE_EXTENSIONS,
+    MAX_IMAGE_SIZE_BYTES,
+    ALLOWED_VIDEO_EXTENSIONS,
+    MAX_VIDEO_SIZE_BYTES,
+    UPLOAD_DIR,
+)
 from ..database import get_db
 from ..models import Report, User
 from ..schemas.report import ReportVerify
@@ -27,6 +33,7 @@ def _out(report: Report, reporter: User | None = None) -> dict:
         "latitude": report.latitude,
         "longitude": report.longitude,
         "image_url": f"/uploads/{Path(report.image_path).name}" if report.image_path else None,
+        "video_url": f"/uploads/{Path(report.video_path).name}" if report.video_path else None,
         "status": report.status,
         "created_at": report.created_at,
     }
@@ -39,6 +46,7 @@ def create_report(
     longitude: float = Form(...),
     description: str = Form(default=""),
     image: UploadFile | None = File(default=None),
+    video: UploadFile | None = File(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -61,6 +69,20 @@ def create_report(
         filename = f"{uuid.uuid4().hex}{suffix}"
         (UPLOAD_DIR / filename).write_bytes(content)
         image_path = filename
+        
+
+    video_path = None
+    if video is not None and video.filename:
+        suffix = Path(video.filename).suffix.lower()
+        if suffix not in ALLOWED_VIDEO_EXTENSIONS:
+            raise HTTPException(status_code=422, detail="Only MP4 or WebM videos are accepted")
+        content = video.file.read()
+        if len(content) > MAX_VIDEO_SIZE_BYTES:
+            raise HTTPException(status_code=413, detail="Video exceeds the 20 MB size limit")
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        filename = f"{uuid.uuid4().hex}{suffix}"
+        (UPLOAD_DIR / filename).write_bytes(content)
+        video_path = filename
 
     report = Report(
         user_id=user.id,
@@ -69,6 +91,7 @@ def create_report(
         latitude=latitude,
         longitude=longitude,
         image_path=image_path,
+           video_path=video_path,
         status="PENDING",
     )
     db.add(report)

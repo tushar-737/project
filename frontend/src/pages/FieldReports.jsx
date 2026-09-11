@@ -44,10 +44,13 @@ export default function FieldReports() {
   });
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [video, setVideo] = useState(null);
+const [videoPreview, setVideoPreview] = useState(null);
   const [gpsState, setGpsState] = useState('idle'); // idle|locating|ok|denied
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const fileRef = useRef(null);
+  const videoRef = useRef(null);
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -110,6 +113,27 @@ export default function FieldReports() {
     reader.onload = () => setImagePreview(reader.result);
     reader.readAsDataURL(file);
   }
+  function onVideoFile(e) {
+  const file = e.target.files?.[0];
+
+  if (!file) return;
+
+  if (!['video/mp4', 'video/webm'].includes(file.type)) {
+    setFormError('Only MP4 or WebM videos are accepted');
+    return;
+  }
+
+  if (file.size > 20 * 1024 * 1024) {
+    setFormError('Video must be under 20 MB');
+    return;
+  }
+
+  setVideo(file);
+  setFormError('');
+
+  const url = URL.createObjectURL(file);
+  setVideoPreview(url);
+}
 
   async function submit(e) {
     e.preventDefault();
@@ -134,7 +158,9 @@ export default function FieldReports() {
         const fd = new FormData();
         Object.entries(payload).forEach(([k, v]) => fd.append(k, String(v)));
         if (image) fd.append('image', image);
-        await api.postForm('/api/reports', fd);
+if (video) fd.append('video', video);
+
+await api.postForm('/api/reports', fd);
       } else {
         // Offline: store locally with the photo embedded, sync later.
         let imageData = null;
@@ -149,6 +175,13 @@ export default function FieldReports() {
       setForm({ report_type: 'LANDSLIDE', description: '', latitude: null, longitude: null });
       setImage(null);
       setImagePreview(null);
+      setVideo(null);
+
+if (videoPreview) {
+  URL.revokeObjectURL(videoPreview);
+}
+
+setVideoPreview(null);
       if (online) refresh();
     } catch (err) {
       setFormError(err.message || 'Could not submit the report');
@@ -209,27 +242,97 @@ export default function FieldReports() {
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                 />
               </label>
-              <div>
-                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">{t('reports.image')}</span>
-                <div className="flex items-center gap-3">
-                  <input ref={fileRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={onFile} />
-                  <button type="button" className="btn-ghost text-xs" onClick={() => fileRef.current?.click()}>
-                    📷 Choose photo
-                  </button>
-                  {image && <span className="text-xs text-slate-500">{image.name}</span>}
-                </div>
-                {imagePreview && (
-                  <img src={imagePreview} alt="preview" className="mt-3 h-32 rounded-lg object-cover ring-1 ring-slate-200" />
-                )}
-              </div>
-            </div>
+  <div>
+  <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">
+    Media Evidence
+  </span>
+
+  <div className="flex flex-wrap items-center gap-3">
+
+    {/* Hidden image input */}
+    <input
+      ref={fileRef}
+      type="file"
+      accept="image/jpeg,image/png"
+      className="hidden"
+      onChange={onFile}
+    />
+
+    {/* Hidden video input */}
+    <input
+      ref={videoRef}
+      type="file"
+      accept="video/mp4,video/webm"
+      className="hidden"
+      onChange={onVideoFile}
+    />
+
+    {/* Choose photo */}
+    <button
+      type="button"
+      className="btn-ghost text-xs"
+      onClick={() => fileRef.current?.click()}
+    >
+      📷 Choose Photo
+    </button>
+
+    {/* Choose video */}
+    <button
+      type="button"
+      className="btn-ghost text-xs"
+      onClick={() => videoRef.current?.click()}
+    >
+      🎥 Choose Video
+    </button>
+
+  </div>
+
+  {/* Selected image name */}
+  {image && (
+    <p className="mt-2 text-xs text-slate-500">
+      📷 {image.name}
+    </p>
+  )}
+
+  {/* Image preview */}
+  {imagePreview && (
+    <img
+      src={imagePreview}
+      alt="Selected evidence"
+      className="mt-3 h-32 rounded-lg object-cover ring-1 ring-slate-200"
+    />
+  )}
+
+  {/* Selected video name */}
+  {video && (
+    <p className="mt-2 text-xs text-slate-500">
+      🎥 {video.name}
+    </p>
+  )}
+
+  {/* Video preview */}
+  {videoPreview && (
+    <video
+      src={videoPreview}
+      controls
+      className="mt-3 h-48 w-full rounded-lg object-cover ring-1 ring-slate-200"
+    />
+  )}
+
+</div>
+
+{/* IMPORTANT: This closes the LEFT COLUMN */}
+</div>
+
+{/* RIGHT COLUMN */}
+
 
             <div className="space-y-4">
               <div>
                 <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">GPS location</span>
                 <div className="flex flex-wrap items-center gap-2">
                   <button type="button" className="btn-ghost text-xs" onClick={useGps}>
-                    📡 {t('reports.useGps')}
+                      📍 Use My Current Location
                   </button>
                   {gpsState === 'locating' && <span className="text-xs text-slate-400">locating…</span>}
                   {gpsState === 'denied' && <span className="text-xs font-semibold text-amber-600">GPS unavailable — pick the point on the map</span>}
@@ -285,8 +388,24 @@ export default function FieldReports() {
             .filter((r) => !filter || r.status === filter)
             .map((r) => (
               <Card key={r.id} className="flex flex-col" pad={false}>
-                {r.image_url && <img src={r.image_url} alt="report" className="h-40 w-full object-cover" />}
-                <div className="flex flex-1 flex-col p-4">
+               {r.image_url && (
+  <img
+    src={r.image_url}
+    alt="report"
+    className="h-40 w-full object-cover"
+  />
+)}
+
+{r.video_url && (
+  <video
+    src={r.video_url}
+    controls
+    className="h-48 w-full object-cover"
+  >
+    Your browser does not support the video tag.
+  </video>
+)}
+           <div className="flex flex-1 flex-col p-4">
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-sm font-extrabold text-govblue-950">
                       {REPORT_TYPE_META[r.report_type]?.icon} {REPORT_TYPE_META[r.report_type]?.label || r.report_type}
