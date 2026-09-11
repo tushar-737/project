@@ -1,6 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
-from ..ml.risk_model import predict_landslide_risk
+from ..ml.risk_engine import (
+    RiskFeatures,
+    get_risk_engine,
+)
 
 
 router = APIRouter(
@@ -11,18 +14,32 @@ router = APIRouter(
 
 @router.get("/predict")
 def predict(
-    rainfall: float,
-    soil_moisture: float,
-    slope_angle: float,
+    latitude: float = Query(...),
+    longitude: float = Query(...),
+    elevation: float = Query(..., ge=0),
+    rainfall: float = Query(..., ge=0),
+    soil_moisture: float = Query(..., ge=0, le=100),
+    slope_angle: float = Query(..., ge=0, le=90),
+    historical_factor: float = Query(0.2, ge=0, le=1),
 ):
     """
-    Predict landslide risk using environmental parameters.
+    Predict landslide risk using the hybrid ML risk engine.
     """
 
-    result = predict_landslide_risk(
-        rainfall=rainfall,
-        soil_moisture=soil_moisture,
-        slope_angle=slope_angle,
+    engine = get_risk_engine()
+
+    result = engine.predict(
+        RiskFeatures(
+            rainfall=rainfall,
+            soil_moisture=soil_moisture,
+            slope_angle=slope_angle,
+            elevation=elevation,
+            historical_factor=historical_factor,
+        )
     )
 
-    return result
+    return {
+        "latitude": latitude,
+        "longitude": longitude,
+        **result.as_dict(),
+    }

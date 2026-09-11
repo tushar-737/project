@@ -20,3 +20,14 @@ backend/uploads/*
 .vscode/
 .idea/
 .DS_Store
+# Python virtual environments
+.venv/
+.venv-1/
+.venv-2/
+venv/
+# Large ML / GIS data
+backend/app/ml/data/dem/
+backend/app/ml/data/raw/
+
+# Large trained ML models
+backend/app/ml/models/*.joblib
