@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../i18n';
 import { ApiError } from '../services/api';
+import UtilityBar from '../components/UtilityBar';
+import Footer from '../components/Footer';
 
 const DEMO_ACCOUNTS = [
   { label: 'Admin Officer', email: 'admin@ner.gov.in', role: 'ADMIN', icon: '🛡️' },
@@ -59,7 +61,9 @@ export default function Login() {
   }
 
   return (
-    <div className="gov-texture flex min-h-screen items-center justify-center bg-govblue-950 p-4">
+    <div className="flex min-h-screen flex-col bg-govblue-950">
+      <UtilityBar />
+      <div id="main-content" className="gov-texture flex flex-1 items-center justify-center p-4">
       <div className="grid w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl lg:grid-cols-2">
         {/* Brand panel */}
         <div className="gov-texture relative hidden flex-col justify-between bg-gradient-to-br from-govblue-900 via-govblue-950 to-govblue-950 p-10 text-white lg:flex">
@@ -150,6 +154,8 @@ export default function Login() {
           </p>
         </div>
       </div>
+      </div>
+      <Footer />
     </div>
   );
 }

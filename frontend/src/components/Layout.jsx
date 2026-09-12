@@ -4,6 +4,8 @@ import { isOnline, syncPendingReports, subscribeOnline } from '../services/offli
 import { useTranslation } from '../i18n';
 import { useAuth } from '../context/AuthContext';
 import { LangSwitch } from './ui';
+import UtilityBar from './UtilityBar';
+import Footer from './Footer';
 
 const NAV = [
   { to: '/', icon: '📊', key: 'dashboard', end: true },
@@ -48,16 +50,17 @@ export default function Layout() {
   }, [user]);
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="flex min-h-screen flex-col bg-slate-100">
+      <UtilityBar />
       {/* Top brand bar */}
-      <header className="gov-texture sticky top-0 z-40 bg-govblue-950 text-white shadow-lg">
+      <header className="gov-texture sticky top-0 z-40 bg-gradient-to-r from-govblue-950 via-govblue-900 to-govblue-950 text-white shadow-lg">
         <div className="flex h-16 items-center justify-between gap-4 px-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 to-orange-500 text-xl shadow">⛰️</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-red-500 to-orange-500 text-xl shadow-pop">⛰️</div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-extrabold tracking-tight">{t('app.name')}</h1>
-                <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">India · NER</span>
+                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300 ring-1 ring-inset ring-white/10">Live Monitoring</span>
               </div>
               <p className="text-[11px] text-slate-300">{t('app.tagline')} · {t('app.region')}</p>
             </div>
@@ -117,20 +120,27 @@ export default function Layout() {
       <div className="flex">
         {/* Sidebar */}
         <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-60 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
-          <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
+          <nav className="flex-1 space-y-1 overflow-y-auto p-3">
             {NAV.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.end}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${
-                    isActive ? 'bg-govblue-800 text-white shadow' : 'text-slate-600 hover:bg-slate-100 hover:text-govblue-900'
+                  `relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all duration-150 ${
+                    isActive
+                      ? 'bg-govblue-50 text-govblue-900 shadow-inner'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-govblue-900'
                   }`
                 }
               >
-                <span className="text-base">{item.icon}</span>
-                {t(`nav.${item.key}`)}
+                {({ isActive }) => (
+                  <>
+                    {isActive && <span className="absolute left-0 top-1.5 h-[calc(100%-0.75rem)] w-1 rounded-r bg-govblue-700" />}
+                    <span className="text-base">{item.icon}</span>
+                    {t(`nav.${item.key}`)}
+                  </>
+                )}
               </NavLink>
             ))}
           </nav>
@@ -161,10 +171,12 @@ export default function Layout() {
           ))}
         </div>
 
-        <main className="min-w-0 flex-1 px-5 pb-24 pt-6 md:px-8 md:pb-10">
+        <main id="main-content" className="min-w-0 flex-1 px-5 pb-24 pt-6 md:px-8 md:pb-10">
           <Outlet />
         </main>
       </div>
+
+      <Footer />
     </div>
   );
 }

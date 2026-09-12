@@ -96,7 +96,7 @@ SensorDataSource  (abstract interface: .read(location) → SensorSample)
 **Frontend:** React 18 · Vite 5 · JavaScript · Tailwind CSS 3 · React Router 6 · Leaflet + React Leaflet 4 · Recharts 2
 **Backend:** Python 3.11 · FastAPI · Uvicorn · Pydantic v2 · SQLAlchemy 2
 **Database:** SQLite (file `backend/ner_landslideai.db`, auto-created + seeded). Postgres/PostGIS-ready: set `DATABASE_URL=postgresql+psycopg2://...` — no code changes needed.
-**AI/ML:** hybrid rule-based engine now; scikit-learn listed in `requirements.txt` for the future trained model.
+**AI/ML:** hybrid engine — a trained scikit-learn `RandomForestClassifier` (terrain susceptibility, from elevation + slope) blended with rule-based rainfall/soil-moisture/historical-factor scoring. See [Installation & setup](#installation--setup) — the trained model file must be generated once before first run.
 **No paid services, no physical hardware required.**
 
 ## Project structure
@@ -144,8 +144,11 @@ Requirements: **Python 3.10+**, **Node 18+**.
 ```bash
 pip install -r requirements.txt     # from the project root
 cd backend
+python -m app.ml.train_susceptibility_model   # one-time: trains + saves the .joblib model
 uvicorn app.main:app --reload --port 8000
 ```
+
+The training step reads `backend/app/ml/data/processed/landslide_ml_dataset.csv` and writes `backend/app/ml/models/landslide_susceptibility_model.joblib`. This file is git-ignored (it's a trained binary, not source) and **is required at startup** — `LandslideRiskEngine` raises a clear `FileNotFoundError` with this exact command if it's missing, instead of failing silently. Re-run it any time the training data changes; skip it on subsequent runs once the file exists.
 
 First startup creates `backend/ner_landslideai.db` and seeds the full demo dataset automatically (takes ~2 seconds). Interactive API docs: **http://localhost:8000/docs**.
 

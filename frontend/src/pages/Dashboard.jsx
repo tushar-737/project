@@ -51,15 +51,20 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold text-govblue-950">{t('nav.dashboard')}</h1>
-          <p className="text-sm text-slate-500">
-            {t('app.region')} · {c.locations} monitored locations ·{' '}
-            <span className="font-semibold text-emerald-600">● live</span>
-          </p>
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-govblue-700 to-govblue-900 text-xl text-white shadow-pop">
+            📊
+          </div>
+          <div>
+            <p className="eyebrow mb-0.5">{t('app.region')}</p>
+            <h1 className="text-[22px] font-extrabold leading-tight tracking-tight text-govblue-950">{t('nav.dashboard')}</h1>
+            <p className="mt-0.5 text-sm text-slate-500">
+              {c.locations} monitored locations · <span className="font-semibold text-emerald-600">● live</span>
+            </p>
+          </div>
         </div>
-        <Link to="/simulation" state={{ autoDemo: true }} className="btn bg-red-600 text-white shadow-sm hover:bg-red-500">
+        <Link to="/simulation" state={{ autoDemo: true }} className="btn-danger shadow-pop">
           🚨 {t('simulation.demo')}
         </Link>
       </div>

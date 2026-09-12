@@ -117,9 +117,13 @@ class LandslideRiskEngine:
         if not MODEL_PATH.exists():
 
             raise FileNotFoundError(
-
-                f"ML model not found:\n{MODEL_PATH}"
-
+                f"ML model not found at:\n{MODEL_PATH}\n\n"
+                "This file is git-ignored (it's a trained binary, not source).\n"
+                "Generate it once with:\n"
+                "    cd backend\n"
+                "    python -m app.ml.train_susceptibility_model\n"
+                "This reads backend/app/ml/data/processed/landslide_ml_dataset.csv "
+                "and writes the .joblib file this engine loads."
             )
 
 

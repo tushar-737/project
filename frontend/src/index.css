@@ -26,31 +26,37 @@
 
 @layer components {
   .card {
-    @apply rounded-xl border border-slate-200 bg-white shadow-card;
+    @apply rounded-xl border border-slate-200/80 bg-white shadow-card transition-shadow duration-200;
+  }
+  .card-hover {
+    @apply hover:shadow-cardhover hover:-translate-y-0.5;
   }
   .card-pad {
     @apply p-5;
   }
   .input {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100;
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-govblue-600 focus:ring-2 focus:ring-govblue-100 disabled:bg-slate-100;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-150 ease-smooth disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98];
   }
   .btn-primary {
-    @apply btn bg-govblue-800 text-white shadow-sm hover:bg-govblue-700 active:bg-govblue-900;
+    @apply btn bg-gradient-to-b from-govblue-700 to-govblue-800 text-white shadow-sm hover:from-govblue-600 hover:to-govblue-700 hover:shadow-pop active:from-govblue-900 active:to-govblue-900;
   }
   .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-500;
+    @apply btn bg-gradient-to-b from-red-500 to-red-600 text-white hover:from-red-500 hover:to-red-500 hover:shadow-pop;
   }
   .btn-ghost {
-    @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+    @apply btn border border-slate-300 bg-white text-slate-700 hover:border-govblue-300 hover:bg-govblue-50 hover:text-govblue-900;
   }
   .chip {
-    @apply inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ring-1;
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ring-1;
+  }
+  .eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[0.14em] text-govblue-700;
   }
   .th {
-    @apply px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500;
+    @apply sticky top-0 z-10 bg-slate-50/95 px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500 backdrop-blur;
   }
   .td {
     @apply px-4 py-3 text-sm text-slate-700;
@@ -120,4 +126,40 @@
 
 .gauge-fill {
   transition: width 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ------- accessibility: high contrast mode ------- */
+html.high-contrast body {
+  background: #000 !important;
+  color: #fff !important;
+}
+html.high-contrast .card,
+html.high-contrast main,
+html.high-contrast aside,
+html.high-contrast .bg-white,
+html.high-contrast .bg-slate-50,
+html.high-contrast .bg-slate-100 {
+  background-color: #000 !important;
+  color: #fff !important;
+  border-color: #fff200 !important;
+}
+html.high-contrast .text-slate-400,
+html.high-contrast .text-slate-500,
+html.high-contrast .text-slate-600,
+html.high-contrast .text-slate-700,
+html.high-contrast .text-slate-800 {
+  color: #f5f5f5 !important;
+}
+html.high-contrast a,
+html.high-contrast .btn-primary,
+html.high-contrast button {
+  outline: 1px solid #fff200 !important;
+}
+html.high-contrast .risk-pin,
+html.high-contrast .chip {
+  outline: 1px solid #fff200;
+}
+html.high-contrast :focus-visible {
+  outline: 3px solid #fff200 !important;
+  outline-offset: 2px;
 }
