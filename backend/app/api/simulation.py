@@ -1,13 +1,3 @@
-"""Simulation Center endpoints.
-
-POST /api/simulation/environment  - generate & store one environmental sample
-POST /api/simulation/run          - full pipeline for chosen location/scenario
-POST /api/simulation/run-demo     - one-click extreme-rain demo on the
-                                    currently highest-risk location
-
-Every "run" executes the same automatic workflow used by real sensor
-ingestion: sample -> risk engine -> prediction -> alert -> SMS -> priority.
-"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -16,20 +6,26 @@ from ..models import Location, RiskPrediction
 from ..schemas.environment import EnvironmentalDataOut
 from ..schemas.simulation import Scenario, SimulationRequest, SimulationOut
 from ..services.pipeline import run_risk_pipeline
-from ..services.sensor_service import SCENARIO_LABELS, SimulatedSensorService
+from ..services.sensor_service import SimulatedSensorService
+
 
 router = APIRouter(prefix="/simulation", tags=["simulation"])
 
 _sensor = SimulatedSensorService()
 
 
-def _simulation_out(location: Location, scenario: str, result: dict,
-                    steps: list[str]) -> SimulationOut:
+def _simulation_out(
+    location: Location,
+    scenario: str,
+    result: dict,
+    steps: list[str],
+) -> SimulationOut:
     env = result["environment"]
     risk = result["risk"]
     alert = result["alert"]
     priority = result["priority"]
     sms = result.get("sms_log")
+
     return SimulationOut(
         location_id=location.id,
         location_name=location.name,
@@ -56,97 +52,238 @@ def _simulation_out(location: Location, scenario: str, result: dict,
     )
 
 
+def _alert_pipeline_step(result: dict) -> str:
+    alert = result.get("alert")
+    alert_generated = result.get("alert_generated", False)
+    sms = result.get("sms_log")
+
+    if alert_generated and alert:
+        if sms:
+            return (
+                f"New alert #{alert.id} generated "
+                f"({alert.risk_level}) + SMS broadcast logged"
+            )
+
+        return (
+            f"New alert #{alert.id} generated "
+            f"({alert.risk_level})"
+        )
+
+    if alert:
+        return (
+            f"Alert #{alert.id} is already active "
+            f"({alert.risk_level}) - no duplicate SMS sent"
+        )
+
+    return "No alert required (risk below threshold)"
+
+
+def _road_pipeline_step(result: dict) -> str:
+    updated_roads = result.get("updated_roads", [])
+
+    if not updated_roads:
+        return "Road connectivity checked - no status change"
+
+    road_updates = []
+
+    for road in updated_roads:
+        road_updates.append(
+            f"{road['name']} "
+            f"({road['old_status']} -> {road['new_status']})"
+        )
+
+    return (
+        "Road connectivity updated: "
+        + ", ".join(road_updates)
+    )
+
+
 @router.post("/environment")
-def generate_environment(payload: SimulationRequest, db: Session = Depends(get_db)):
-    """STEP 1-3 of the workflow: generate and persist one sample.
+def generate_environment(
+    payload: SimulationRequest,
+    db: Session = Depends(get_db),
+):
+    location = db.get(
+        Location,
+        payload.location_id,
+    )
 
-    The sample is stored but does NOT trigger the risk engine; use
-    /simulation/run for the complete workflow in one call.
-    """
-    location = db.get(Location, payload.location_id)
     if not location:
-        raise HTTPException(status_code=404, detail="Location not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Location not found",
+        )
 
-    sample = _sensor.read(location, scenario=payload.scenario)
+    sample = _sensor.read(
+        location,
+        scenario=payload.scenario,
+    )
+
     from ..models import EnvironmentalData
+
     env = EnvironmentalData(
         location_id=location.id,
-        rainfall=sample.rainfall, soil_moisture=sample.soil_moisture,
-        temperature=sample.temperature, humidity=sample.humidity,
-        slope_angle=sample.slope_angle, scenario=sample.scenario,
+        rainfall=sample.rainfall,
+        soil_moisture=sample.soil_moisture,
+        temperature=sample.temperature,
+        humidity=sample.humidity,
+        slope_angle=sample.slope_angle,
+        scenario=sample.scenario,
     )
+
     db.add(env)
     db.commit()
     db.refresh(env)
+
     return EnvironmentalDataOut.model_validate(env)
 
 
 @router.post("/run", response_model=SimulationOut)
-def run_simulation(payload: SimulationRequest, db: Session = Depends(get_db)):
-    """Run the complete 8-step automatic pipeline for one scenario."""
-    location = db.get(Location, payload.location_id)
-    if not location:
-        raise HTTPException(status_code=404, detail="Location not found")
-    if payload.scenario not in Scenario.__args__:
-        raise HTTPException(status_code=422, detail="Unknown scenario")
+def run_simulation(
+    payload: SimulationRequest,
+    db: Session = Depends(get_db),
+):
+    location = db.get(
+        Location,
+        payload.location_id,
+    )
 
-    sample = _sensor.read(location, scenario=payload.scenario)
-    result = run_risk_pipeline(db, location, sample)
+    if not location:
+        raise HTTPException(
+            status_code=404,
+            detail="Location not found",
+        )
+
+    if payload.scenario not in Scenario.__args__:
+        raise HTTPException(
+            status_code=422,
+            detail="Unknown scenario",
+        )
+
+    sample = _sensor.read(
+        location,
+        scenario=payload.scenario,
+    )
+
+    result = run_risk_pipeline(
+        db,
+        location,
+        sample,
+    )
 
     steps = [
-        f"Generated {payload.scenario} environmental sample "
-        f"({sample.rainfall:.0f} mm rainfall, {sample.soil_moisture:.0f}% soil moisture)",
+        (
+            f"Generated {payload.scenario} environmental sample "
+            f"({sample.rainfall:.0f} mm rainfall, "
+            f"{sample.soil_moisture:.0f}% soil moisture)"
+        ),
         "Sent sample to backend and stored it",
         "AI risk engine executed",
-        f"Risk score {result['risk'].score:.1f}/100 - {result['risk'].level}",
+        (
+            f"Risk score {result['risk'].score:.1f}/100 - "
+            f"{result['risk'].level}"
+        ),
         "Risk prediction saved",
-        "GIS/location record updated",
+        _road_pipeline_step(result),
+        _alert_pipeline_step(result),
+        (
+            f"Emergency priority updated to "
+            f"{result['priority'].priority_level}"
+        ),
     ]
-    if result["alert"]:
-        steps.append(f"Alert #{result['alert'].id} generated ({result['alert'].risk_level}) + SMS broadcast logged")
-    else:
-        steps.append("No new alert required (risk below threshold or unchanged)")
-    steps.append(f"Emergency priority updated to {result['priority'].priority_level}")
 
-    return _simulation_out(location, payload.scenario, result, steps)
+    return _simulation_out(
+        location,
+        payload.scenario,
+        result,
+        steps,
+    )
 
 
 @router.post("/run-demo", response_model=SimulationOut)
-def run_demo(db: Session = Depends(get_db)):
-    """🚨 One-click demo: EXTREME RAIN on the currently highest-risk site."""
+def run_demo(
+    db: Session = Depends(get_db),
+):
     latest_preds = (
         db.query(RiskPrediction)
-        .order_by(RiskPrediction.prediction_time.desc())
+        .order_by(
+            RiskPrediction.prediction_time.desc()
+        )
         .all()
     )
+
     order: dict[int, float] = {}
-    for p in latest_preds:
-        order.setdefault(p.location_id, p.risk_score)
+
+    for prediction in latest_preds:
+        order.setdefault(
+            prediction.location_id,
+            prediction.risk_score,
+        )
 
     location = None
-    for loc in db.query(Location).filter(Location.is_active.is_(True)).all():
-        if location is None or order.get(loc.id, 0) > order.get(location.id, 0):
+
+    for loc in (
+        db.query(Location)
+        .filter(Location.is_active.is_(True))
+        .all()
+    ):
+        if location is None:
             location = loc
 
+        elif (
+            order.get(loc.id, 0)
+            > order.get(location.id, 0)
+        ):
+            location = loc
+
+    if location is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No active monitored locations found",
+        )
+
     scenario: Scenario = "EXTREME_RAIN"
-    sample = _sensor.read(location, scenario=scenario)
-    result = run_risk_pipeline(db, location, sample)
+
+    sample = _sensor.read(
+        location,
+        scenario=scenario,
+    )
+
+    result = run_risk_pipeline(
+        db,
+        location,
+        sample,
+    )
 
     steps = [
-        f"Auto-selected highest-risk location: {location.name} "
-        f"({location.district}, {location.state})",
-        f"Generated {scenario} environmental sample "
-        f"({sample.rainfall:.0f} mm rainfall, {sample.soil_moisture:.0f}% soil moisture)",
+        (
+            f"Auto-selected highest-risk location: "
+            f"{location.name} "
+            f"({location.district}, {location.state})"
+        ),
+        (
+            f"Generated {scenario} environmental sample "
+            f"({sample.rainfall:.0f} mm rainfall, "
+            f"{sample.soil_moisture:.0f}% soil moisture)"
+        ),
         "Sent sample to backend and stored it",
         "AI risk engine executed",
-        f"Risk score {result['risk'].score:.1f}/100 - {result['risk'].level}",
+        (
+            f"Risk score {result['risk'].score:.1f}/100 - "
+            f"{result['risk'].level}"
+        ),
         "Risk prediction saved",
-        "GIS/location record updated",
+        _road_pipeline_step(result),
+        _alert_pipeline_step(result),
+        (
+            f"Emergency priority updated to "
+            f"{result['priority'].priority_level}"
+        ),
     ]
-    if result["alert"]:
-        steps.append(f"Alert #{result['alert'].id} generated ({result['alert'].risk_level}) + SMS broadcast logged")
-    else:
-        steps.append("No new alert required (risk below threshold or unchanged)")
-    steps.append(f"Emergency priority updated to {result['priority'].priority_level}")
 
-    return _simulation_out(location, scenario, result, steps)
+    return _simulation_out(
+        location,
+        scenario,
+        result,
+        steps,
+    )

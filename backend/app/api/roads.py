@@ -9,6 +9,9 @@ from ..models import Location, RiskPrediction, Road, User
 from ..schemas.road import RoadStatusUpdate
 from .deps import get_current_user
 from ..services.emergency_service import compute_priority
+from ..services.road_intelligence_service import (
+    refresh_all_road_intelligence,
+)
 
 router = APIRouter(prefix="/roads", tags=["roads"])
 
@@ -60,6 +63,23 @@ def road_summary(db: Session = Depends(get_db)):
     for r in rows:
         counts[r.status] = counts.get(r.status, 0) + 1
     return {**{k.lower().replace("_", "_"): v for k, v in counts.items()}, "total": len(rows)}
+@router.post("/refresh-intelligence")
+def refresh_road_intelligence(
+    db: Session = Depends(get_db),
+):
+    """
+    Refresh road intelligence using the latest stored
+    AI risk prediction for every monitored location.
+
+    No fake data is generated.
+    """
+
+    result = refresh_all_road_intelligence(db)
+
+    return {
+        "message": "Road intelligence refreshed successfully",
+        **result,
+    }
 
 
 @router.put("/{road_id}")

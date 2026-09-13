@@ -1,16 +1,5 @@
-"""Automatic risk prediction pipeline.
-
-Whenever new environmental data arrives (simulated or, in the future, from
-real IoT sensors) this pipeline runs the complete workflow:
-
-    1. Save environmental data
-    2. Run the AI risk engine
-    3. Save the risk prediction
-    4. Update alert state (create HIGH/CRITICAL alerts)
-    5. Dispatch simulated SMS broadcast
-    6. Recompute emergency priority for the location
-"""
 from datetime import datetime, timezone
+import json
 
 from sqlalchemy.orm import Session
 
@@ -18,26 +7,21 @@ from ..ml.risk_engine import RiskFeatures, get_risk_engine
 from ..models import EnvironmentalData, RiskPrediction
 from .alert_service import process_alert
 from .emergency_service import compute_priority
+from .road_intelligence_service import update_roads_from_risk
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def run_risk_pipeline(db: Session, location, sample,
-                      sample_time: datetime | None = None) -> dict:
-    """Execute the full data -> risk -> alert -> priority workflow.
-
-    `sample` is a SensorSample (from services/sensor_service.py) or any
-    object with rainfall / soil_moisture / temperature / humidity /
-    slope_angle / scenario attributes. Returns a result dict describing
-    every pipeline stage; raises on failure so callers can surface errors.
-    """
-    import json
-
+def run_risk_pipeline(
+    db: Session,
+    location,
+    sample,
+    sample_time: datetime | None = None,
+) -> dict:
     steps = ["Environmental data received"]
 
-    # 1. Persist the environmental sample.
     env = EnvironmentalData(
         location_id=location.id,
         rainfall=round(sample.rainfall, 1),
@@ -48,12 +32,14 @@ def run_risk_pipeline(db: Session, location, sample,
         scenario=sample.scenario,
         timestamp=sample_time or utcnow(),
     )
+
     db.add(env)
     db.flush()
+
     steps.append("Environmental data saved")
 
-    # 2. Run the AI risk engine.
     engine = get_risk_engine()
+
     result = engine.predict(
         RiskFeatures(
             rainfall=env.rainfall,
@@ -66,9 +52,9 @@ def run_risk_pipeline(db: Session, location, sample,
         ),
         location=location,
     )
+
     steps.append("AI risk engine executed")
 
-    # 3. Persist the prediction.
     prediction = RiskPrediction(
         location_id=location.id,
         risk_score=result.score,
@@ -77,23 +63,52 @@ def run_risk_pipeline(db: Session, location, sample,
         contributing_factors=json.dumps(result.factors),
         prediction_time=env.timestamp,
     )
+
     db.add(prediction)
     db.flush()
+
     steps.append("Risk prediction saved")
 
-    # 4. Alert state + simulated SMS.
-    alert, is_new, sms = process_alert(db, location, result.score, result.level,
-                                       result.factors)
+    updated_roads = update_roads_from_risk(
+        db=db,
+        location=location,
+        risk_score=result.score,
+        risk_level=result.level,
+    )
+
+    if updated_roads:
+        road_names = ", ".join(
+            f"{road['name']} ({road['old_status']} → {road['new_status']})"
+            for road in updated_roads
+        )
+        steps.append(f"Road connectivity updated: {road_names}")
+    else:
+        steps.append("Road connectivity checked - no status change")
+
+    alert, is_new, sms = process_alert(
+        db,
+        location,
+        result.score,
+        result.level,
+        result.factors,
+    )
+
     if is_new:
-        steps.append("Alert generated & SMS dispatched")
+        steps.append("Alert generated and SMS dispatched")
     elif alert is not None:
         steps.append("Alert already active for this risk level")
     else:
         steps.append("Risk below alert threshold - no alert needed")
 
-    # 5. Emergency priority.
-    priority = compute_priority(db, location, result.score)
-    steps.append("Emergency priority computed")
+    priority = compute_priority(
+        db,
+        location,
+        result.score,
+    )
+
+    steps.append(
+        f"Emergency priority computed: {priority.priority_level}"
+    )
 
     db.commit()
 
@@ -105,5 +120,6 @@ def run_risk_pipeline(db: Session, location, sample,
         "alert_generated": is_new,
         "sms_log": sms,
         "priority": priority,
+        "updated_roads": updated_roads,
         "steps": steps,
     }

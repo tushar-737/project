@@ -47,36 +47,197 @@ function FocusController({ focusId, zones }) {
 
 function RiskPopup({ z }) {
   const { t } = useTranslation();
+
+  const historical = Number(z.historical_landslide_factor);
+  const population = Number(z.population_factor);
+  const isolation = Number(z.isolation_factor);
+
+  const hasHistorical = Number.isFinite(historical);
+  const hasPopulation = Number.isFinite(population);
+  const hasIsolation = Number.isFinite(isolation);
+
   return (
-    <div className="w-60 text-slate-800">
+    <div className="w-64 text-slate-800">
+
+      {/* Header */}
+
       <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+
         <div>
-          <p className="text-sm font-extrabold text-govblue-950">{z.name}</p>
+          <p className="text-sm font-extrabold text-govblue-950">
+            {z.name}
+          </p>
+
           <p className="text-[11px] text-slate-500">
             {z.district}, {z.state}
           </p>
         </div>
+
         <RiskBadge level={z.risk_level} />
+
       </div>
+
+
+      {/* Environmental Data */}
+
+      <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
+        Environmental Conditions
+      </p>
+
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-        <dt className="text-slate-400">{t('env.rainfall')}</dt>
-        <dd className="text-right font-bold text-blue-700">{fmtNum(z.rainfall, 1)} mm</dd>
-        <dt className="text-slate-400">{t('env.soilMoisture')}</dt>
-        <dd className="text-right font-bold text-emerald-700">{fmtNum(z.soil_moisture, 1)}%</dd>
-        <dt className="text-slate-400">{t('env.slope')}</dt>
-        <dd className="text-right font-bold">{fmtNum(z.slope_angle, 1)}°</dd>
-        <dt className="text-slate-400">{t('risk.score')}</dt>
-        <dd className="text-right text-sm font-extrabold tabular-nums text-govblue-950">{fmtNum(z.risk_score, 0)}/100</dd>
-        <dt className="col-span-2 mt-1 border-t border-slate-100 pt-1 text-slate-400">
-          {t('map.popup.updated')}: {timeAgo(z.last_updated)}
+
+        <dt className="text-slate-400">
+          🌧️ {t('env.rainfall')}
         </dt>
+
+        <dd className="text-right font-bold text-blue-700">
+          {fmtNum(z.rainfall, 1)} mm
+        </dd>
+
+
+        <dt className="text-slate-400">
+          💧 {t('env.soilMoisture')}
+        </dt>
+
+        <dd className="text-right font-bold text-emerald-700">
+          {fmtNum(z.soil_moisture, 1)}%
+        </dd>
+
+
+        <dt className="text-slate-400">
+          📐 {t('env.slope')}
+        </dt>
+
+        <dd className="text-right font-bold">
+          {fmtNum(z.slope_angle, 1)}°
+        </dd>
+
       </dl>
-      <div className="mt-2">
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-          <div className="h-full rounded-full" style={{ width: `${z.risk_score}%`, background: RISK_META[z.risk_level]?.color }} />
-        </div>
-        <p className="mt-1 text-[10px] text-slate-400">confidence {(z.confidence * 100).toFixed(0)}%</p>
+
+
+      {/* Terrain Intelligence */}
+
+      <div className="mt-3 border-t border-slate-100 pt-2">
+
+        <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
+          Terrain Intelligence
+        </p>
+
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+
+          <dt className="text-slate-400">
+            ⛰️ Elevation
+          </dt>
+
+          <dd className="text-right font-bold">
+            {fmtNum(z.elevation, 0)} m
+          </dd>
+
+
+          <dt className="text-slate-400">
+            📚 Historical Risk
+          </dt>
+
+          <dd className="text-right font-bold text-amber-700">
+
+            {hasHistorical
+              ? `${fmtNum(historical * 100, 0)}%`
+              : '—'}
+
+          </dd>
+
+        </dl>
+
       </div>
+
+
+      {/* Community Exposure */}
+
+      <div className="mt-3 border-t border-slate-100 pt-2">
+
+        <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
+          Community Exposure
+        </p>
+
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+
+          <dt className="text-slate-400">
+            👥 Population Factor
+          </dt>
+
+          <dd className="text-right font-bold text-purple-700">
+
+            {hasPopulation
+              ? `${fmtNum(population * 100, 0)}%`
+              : '—'}
+
+          </dd>
+
+
+          <dt className="text-slate-400">
+            🏔️ Isolation Factor
+          </dt>
+
+          <dd className="text-right font-bold text-orange-700">
+
+            {hasIsolation
+              ? `${fmtNum(isolation * 100, 0)}%`
+              : '—'}
+
+          </dd>
+
+        </dl>
+
+      </div>
+
+
+      {/* AI Risk */}
+
+      <div className="mt-3 border-t border-slate-100 pt-2">
+
+        <div className="flex items-center justify-between">
+
+          <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
+            AI Risk Assessment
+          </p>
+
+          <p className="text-sm font-extrabold tabular-nums text-govblue-950">
+            {fmtNum(z.risk_score, 0)}/100
+          </p>
+
+        </div>
+
+
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+
+          <div
+            className="h-full rounded-full"
+            style={{
+              width: `${z.risk_score}%`,
+              background: RISK_META[z.risk_level]?.color,
+            }}
+          />
+
+        </div>
+
+
+        <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+
+          <span>
+            Confidence{' '}
+            {Number.isFinite(Number(z.confidence))
+              ? `${(Number(z.confidence) * 100).toFixed(0)}%`
+              : '—'}
+          </span>
+
+          <span>
+            Updated {timeAgo(z.last_updated)}
+          </span>
+
+        </div>
+
+      </div>
+
     </div>
   );
 }
