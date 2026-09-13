@@ -1,4 +1,5 @@
 from ..ml.risk_engine import RiskFeatures, get_risk_engine
+
 from .weather_service import (
     get_forecast_rainfall,
     get_weather_sample,
@@ -19,39 +20,63 @@ def get_risk_forecast(location) -> dict:
 
     engine = get_risk_engine()
 
-    # -----------------------------
+    # ========================================================
     # NEXT 24 HOURS
-    # -----------------------------
+    # ========================================================
 
     risk_24h = engine.predict(
         RiskFeatures(
             rainfall=rainfall_forecast["next_24h"],
+
+            # Antecedent rainfall
+            rainfall_72h=current_sample.rainfall_72h,
+            rainfall_7d=current_sample.rainfall_7d,
+
+            # Environmental data
             soil_moisture=current_sample.soil_moisture,
             slope_angle=location.slope_angle,
             elevation=location.elevation,
+
+            # Historical data
             historical_factor=location.historical_landslide_factor,
+
+            # Weather context
             humidity=current_sample.humidity,
             temperature=current_sample.temperature,
         ),
         location=location,
     )
 
-    # -----------------------------
+    # ========================================================
     # NEXT 48 HOURS
-    # -----------------------------
+    # ========================================================
 
     risk_48h = engine.predict(
         RiskFeatures(
             rainfall=rainfall_forecast["next_48h"],
+
+            # Antecedent rainfall
+            rainfall_72h=current_sample.rainfall_72h,
+            rainfall_7d=current_sample.rainfall_7d,
+
+            # Environmental data
             soil_moisture=current_sample.soil_moisture,
             slope_angle=location.slope_angle,
             elevation=location.elevation,
+
+            # Historical data
             historical_factor=location.historical_landslide_factor,
+
+            # Weather context
             humidity=current_sample.humidity,
             temperature=current_sample.temperature,
         ),
         location=location,
     )
+
+    # ========================================================
+    # RETURN FORECAST
+    # ========================================================
 
     return {
         "forecast_rainfall": rainfall_forecast,

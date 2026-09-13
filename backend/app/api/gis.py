@@ -1,8 +1,15 @@
 from fastapi import APIRouter, Depends
+
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Location, RiskPrediction
+
+from ..services.gis_heatmap_service import (
+    get_heatmap_summary,
+    get_risk_heatmap_data,
+)
+
 from .deps import get_current_user
 
 
@@ -11,6 +18,10 @@ router = APIRouter(
     tags=["GIS"],
 )
 
+
+# ==========================================================
+# GEOJSON RISK MAP
+# ==========================================================
 
 @router.get("/risk-map")
 def get_risk_map(
@@ -24,7 +35,7 @@ def get_risk_map(
 
     locations = (
         db.query(Location)
-        .filter(Location.is_active == True)
+        .filter(Location.is_active.is_(True))
         .all()
     )
 
@@ -32,7 +43,7 @@ def get_risk_map(
 
     for location in locations:
 
-        # Get the latest prediction for this location
+        # Get the latest prediction
         prediction = (
             db.query(RiskPrediction)
             .filter(
@@ -44,7 +55,7 @@ def get_risk_map(
             .first()
         )
 
-        # Skip locations that do not yet have a prediction
+        # Skip locations without predictions
         if prediction is None:
             continue
 
@@ -54,7 +65,7 @@ def get_risk_map(
             "geometry": {
                 "type": "Point",
 
-                # GeoJSON always uses:
+                # GeoJSON format:
                 # [longitude, latitude]
                 "coordinates": [
                     location.longitude,
@@ -64,12 +75,21 @@ def get_risk_map(
 
             "properties": {
                 "location_id": location.id,
+
                 "name": location.name,
+
                 "district": location.district,
+
                 "state": location.state,
 
+                "elevation": location.elevation,
+
+                "slope_angle": location.slope_angle,
+
                 "risk_score": prediction.risk_score,
+
                 "risk_level": prediction.risk_level,
+
                 "confidence": prediction.confidence,
 
                 "prediction_time": (
@@ -84,3 +104,52 @@ def get_risk_map(
         "type": "FeatureCollection",
         "features": features,
     }
+
+
+# ==========================================================
+# GIS HEATMAP DATA
+# ==========================================================
+
+@router.get("/heatmap")
+def get_heatmap(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """
+    Return GIS-ready landslide risk heatmap points.
+
+    Designed for frontend map libraries such as:
+
+    - Leaflet
+    - React Leaflet
+    - Mapbox
+    - GIS dashboards
+    """
+
+    points = get_risk_heatmap_data(
+        db=db,
+    )
+
+    return {
+        "total_points": len(points),
+        "points": points,
+    }
+
+
+# ==========================================================
+# HEATMAP SUMMARY
+# ==========================================================
+
+@router.get("/heatmap/summary")
+def get_heatmap_statistics(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """
+    Return risk distribution and GIS heatmap
+    summary statistics.
+    """
+
+    return get_heatmap_summary(
+        db=db,
+    )

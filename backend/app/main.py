@@ -19,12 +19,14 @@ APP_DESCRIPTION = (
 
 
 def _seed_if_empty() -> None:
+
     from .models import Location
     from .services.seed import seed_database
 
     db = SessionLocal()
 
     try:
+
         if db.query(Location).count() == 0:
             seed_database(db)
 
@@ -35,7 +37,10 @@ def _seed_if_empty() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
 
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    UPLOAD_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     init_db()
 
@@ -45,24 +50,41 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
+
     title=APP_NAME,
+
     description=APP_DESCRIPTION,
+
     version="1.0.0",
+
     lifespan=lifespan,
+
 )
 
 
-# CORS for the React/Vite frontend
+# ==========================================================
+# CORS FOR REACT / VITE FRONTEND
+# ==========================================================
+
 app.add_middleware(
+
     CORSMiddleware,
+
     allow_origins=["*"],
+
     allow_credentials=False,
+
     allow_methods=["*"],
+
     allow_headers=["*"],
+
 )
 
 
-# Routers
+# ==========================================================
+# API ROUTERS
+# ==========================================================
+
 from .api import (
     alerts,
     auth,
@@ -73,9 +95,11 @@ from .api import (
     locations,
     reports,
     risk,
+    risk_zones,
     roads,
     simulation,
     ml,
+    satellite,
 )
 
 
@@ -83,39 +107,95 @@ API_PREFIX = "/api"
 
 
 for module in (
+
     auth,
+
     locations,
+
     environment,
+
     risk,
+
+    # High-risk zone monitoring
+    risk_zones,
+
     reports,
+
     roads,
+
     alerts,
+
     emergency,
+
     simulation,
+
     dashboard,
+
     gis,
+
     ml,
+    satellite,
+
 ):
-    app.include_router(module.router, prefix=API_PREFIX)
+
+    app.include_router(
+        module.router,
+        prefix=API_PREFIX,
+    )
 
 
-@app.get("/api/health", tags=["system"])
+# ==========================================================
+# SYSTEM HEALTH
+# ==========================================================
+
+@app.get(
+    "/api/health",
+    tags=["system"],
+)
 def health():
+
     return {
+
         "status": "healthy",
+
         "message": "NER LandslideAI backend is running",
+
     }
 
 
-@app.get("/", tags=["system"])
+# ==========================================================
+# ROOT
+# ==========================================================
+
+@app.get(
+    "/",
+    tags=["system"],
+)
 def root():
+
     return {
+
         "name": APP_NAME,
+
         "docs": "/docs",
+
         "health": "/api/health",
+
         "api": "/api",
+
     }
 
 
-# Serve uploaded report images
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+# ==========================================================
+# SERVE UPLOADED REPORT IMAGES
+# ==========================================================
+
+app.mount(
+
+    "/uploads",
+
+    StaticFiles(directory=UPLOAD_DIR),
+
+    name="uploads",
+
+)

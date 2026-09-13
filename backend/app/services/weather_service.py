@@ -20,12 +20,26 @@ REQUEST_TIMEOUT = (5, 10)
 
 @dataclass
 class WeatherSample:
+    # Rainfall accumulated during the previous 24 hours.
     rainfall: float
+
+    # Antecedent rainfall accumulated before the current time.
+    rainfall_72h: float
+    rainfall_7d: float
+
+    # Current environmental conditions.
     soil_moisture: float
     temperature: float
     humidity: float
+
+    # Terrain information.
     slope_angle: float
+
+    # Scenario derived from recent rainfall.
     scenario: str
+
+    # Data source information.
+    source: str = "OPEN_METEO"
 
 
 # ============================================================
@@ -77,9 +91,9 @@ def get_live_weather(
             "soil_moisture_3_to_9cm"
         ),
 
-        # Previous data required to calculate
-        # actual rainfall during the last 24 hours.
-        "past_days": 2,
+        # Previous data required for antecedent
+        # rainfall calculations.
+        "past_days": 7,
 
         # Forecast data for 24h and 48h prediction.
         "forecast_days": 3,
@@ -88,7 +102,6 @@ def get_live_weather(
     }
 
     try:
-
         response = requests.get(
             BASE_URL,
             params=params,
@@ -100,7 +113,6 @@ def get_live_weather(
         return response.json()
 
     except requests.RequestException as exc:
-
         raise RuntimeError(
             f"Open-Meteo request failed: {str(exc)}"
         )
@@ -133,7 +145,6 @@ def get_weather_sample(location) -> WeatherSample:
             "Current weather data unavailable"
         )
 
-
     temperature = current.get(
         "temperature_2m"
     )
@@ -142,29 +153,22 @@ def get_weather_sample(location) -> WeatherSample:
         "relative_humidity_2m"
     )
 
-
     if temperature is None:
-
         raise ValueError(
             "Temperature data unavailable"
         )
 
-
     if humidity is None:
-
         raise ValueError(
             "Humidity data unavailable"
         )
 
-
     current_time_string = current.get("time")
 
     if not current_time_string:
-
         raise ValueError(
             "Current weather timestamp unavailable"
         )
-
 
     current_time = datetime.fromisoformat(
         current_time_string
@@ -178,11 +182,9 @@ def get_weather_sample(location) -> WeatherSample:
     hourly = data.get("hourly")
 
     if not hourly:
-
         raise ValueError(
             "Hourly weather data unavailable"
         )
-
 
     hourly_times = hourly.get("time")
 
@@ -194,29 +196,42 @@ def get_weather_sample(location) -> WeatherSample:
         "soil_moisture_3_to_9cm"
     )
 
-
     if (
         not hourly_times
         or precipitation_values is None
         or soil_moisture_values is None
     ):
-
         raise ValueError(
             "Required hourly weather data unavailable"
         )
 
 
     # ========================================================
-    # CALCULATE PREVIOUS 24-HOUR RAINFALL
+    # CALCULATE ANTECEDENT RAINFALL
     # ========================================================
 
-    start_time = (
+    # Landslides are influenced not only by
+    # immediate rainfall but also by accumulated
+    # rainfall over previous days.
+
+    start_24h = (
         current_time
         - timedelta(hours=24)
     )
 
+    start_72h = (
+        current_time
+        - timedelta(hours=72)
+    )
+
+    start_7d = (
+        current_time
+        - timedelta(days=7)
+    )
 
     rainfall_24h = 0.0
+    rainfall_72h = 0.0
+    rainfall_7d = 0.0
 
 
     for time_string, rainfall_value in zip(
@@ -227,20 +242,44 @@ def get_weather_sample(location) -> WeatherSample:
         if rainfall_value is None:
             continue
 
-
         sample_time = datetime.fromisoformat(
             time_string
         )
 
+        rainfall_value = float(
+            rainfall_value
+        )
 
+        # Do not include future forecast data.
+        if sample_time > current_time:
+            continue
+
+
+        # Previous 24 hours.
         if (
-            start_time < sample_time
+            start_24h
+            < sample_time
             <= current_time
         ):
+            rainfall_24h += rainfall_value
 
-            rainfall_24h += float(
-                rainfall_value
-            )
+
+        # Previous 72 hours.
+        if (
+            start_72h
+            < sample_time
+            <= current_time
+        ):
+            rainfall_72h += rainfall_value
+
+
+        # Previous 7 days.
+        if (
+            start_7d
+            < sample_time
+            <= current_time
+        ):
+            rainfall_7d += rainfall_value
 
 
     # ========================================================
@@ -251,11 +290,8 @@ def get_weather_sample(location) -> WeatherSample:
 
 
     for time_string, moisture_value in zip(
-
         reversed(hourly_times),
-
         reversed(soil_moisture_values),
-
     ):
 
         if moisture_value is None:
@@ -268,7 +304,6 @@ def get_weather_sample(location) -> WeatherSample:
 
 
         # Do not use future forecast data.
-
         if sample_time <= current_time:
 
             latest_soil_moisture = float(
@@ -279,7 +314,6 @@ def get_weather_sample(location) -> WeatherSample:
 
 
     if latest_soil_moisture is None:
-
         raise ValueError(
             "Real soil moisture data unavailable"
         )
@@ -298,7 +332,6 @@ def get_weather_sample(location) -> WeatherSample:
 
 
     # Prevent unexpected values.
-
     soil_moisture_percent = max(
         0.0,
         min(
@@ -323,11 +356,24 @@ def get_weather_sample(location) -> WeatherSample:
 
     return WeatherSample(
 
+        # Previous 24-hour rainfall.
         rainfall=round(
             rainfall_24h,
             2,
         ),
 
+        # Antecedent rainfall.
+        rainfall_72h=round(
+            rainfall_72h,
+            2,
+        ),
+
+        rainfall_7d=round(
+            rainfall_7d,
+            2,
+        ),
+
+        # Environmental data.
         soil_moisture=round(
             soil_moisture_percent,
             2,
@@ -343,12 +389,14 @@ def get_weather_sample(location) -> WeatherSample:
             2,
         ),
 
+        # Terrain data.
         slope_angle=float(
             location.slope_angle
         ),
 
         scenario=scenario,
 
+        source="OPEN_METEO",
     )
 
 
@@ -368,20 +416,21 @@ def get_forecast_rainfall(location) -> dict:
     )
 
 
-    current = data.get("current")
+    # ========================================================
+    # GET WEATHER DATA
+    # ========================================================
 
+    current = data.get("current")
     hourly = data.get("hourly")
 
 
     if not current:
-
         raise ValueError(
             "Current weather data unavailable"
         )
 
 
     if not hourly:
-
         raise ValueError(
             "Hourly weather data unavailable"
         )
@@ -391,7 +440,6 @@ def get_forecast_rainfall(location) -> dict:
 
 
     if not current_time_string:
-
         raise ValueError(
             "Current weather timestamp unavailable"
         )
@@ -413,14 +461,13 @@ def get_forecast_rainfall(location) -> dict:
         not hourly_times
         or precipitation_values is None
     ):
-
         raise ValueError(
             "Forecast rainfall data unavailable"
         )
 
 
     # ========================================================
-    # TIME WINDOWS
+    # FORECAST TIME WINDOWS
     # ========================================================
 
     next_24h = (
@@ -436,7 +483,6 @@ def get_forecast_rainfall(location) -> dict:
 
 
     rainfall_next_24h = 0.0
-
     rainfall_next_48h = 0.0
 
 
@@ -445,11 +491,8 @@ def get_forecast_rainfall(location) -> dict:
     # ========================================================
 
     for time_string, rainfall_value in zip(
-
         hourly_times,
-
         precipitation_values,
-
     ):
 
         if rainfall_value is None:
@@ -466,25 +509,23 @@ def get_forecast_rainfall(location) -> dict:
         )
 
 
-        # Next 24 hours
-
+        # Next 24 hours.
         if (
-            current_time < sample_time
+            current_time
+            < sample_time
             <= next_24h
         ):
-
             rainfall_next_24h += (
                 rainfall_value
             )
 
 
-        # Next 48 hours
-
+        # Next 48 hours.
         if (
-            current_time < sample_time
+            current_time
+            < sample_time
             <= next_48h
         ):
-
             rainfall_next_48h += (
                 rainfall_value
             )

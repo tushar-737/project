@@ -116,14 +116,40 @@
   font: inherit;
 }
 
-/* subtle grid backdrop for the whole app header area */
+/* =========================================================
+   SUBTLE GRID TEXTURE
+   Does NOT override Tailwind background gradients
+   ========================================================= */
+
 .gov-texture {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
-  background-size: 26px 26px;
+  position: relative;
+  isolation: isolate;
 }
 
+.gov-texture::before {
+  content: "";
+
+  position: absolute;
+
+  inset: 0;
+
+  z-index: -1;
+
+  pointer-events: none;
+
+  background-image:
+    linear-gradient(
+      rgba(255, 255, 255, 0.045) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.045) 1px,
+      transparent 1px
+    );
+
+  background-size: 26px 26px;
+}
 .gauge-fill {
   transition: width 0.9s cubic-bezier(0.22, 1, 0.36, 1);
 }

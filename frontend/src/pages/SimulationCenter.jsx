@@ -504,7 +504,7 @@ export default function SimulationCenter() {
 
               <div className="card overflow-hidden">
 
-                <div className="gov-texture flex flex-wrap items-center gap-6 bg-govblue-950 p-6 text-white">
+               <div className="relative hidden flex-col justify-between bg-gradient-to-br from-govblue-900 via-govblue-950 to-govblue-950 p-10 text-white lg:flex">
 
                   <div className="rounded-2xl bg-white/95 p-4">
 
