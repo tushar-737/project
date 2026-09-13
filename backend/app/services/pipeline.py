@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
+
 import json
 
 from sqlalchemy.orm import Session
 
 from ..ml.risk_engine import RiskFeatures, get_risk_engine
+
 from ..models import (
     EnvironmentalData,
     RiskPrediction,
@@ -14,6 +16,7 @@ from .alert_service import process_alert
 from .emergency_service import compute_priority
 from .road_intelligence_service import update_roads_from_risk
 from .satellite_service import get_satellite_intelligence
+from .hybrid_risk_service import calculate_hybrid_risk
 
 
 def utcnow() -> datetime:
@@ -28,10 +31,6 @@ def run_risk_pipeline(
 ) -> dict:
 
     steps = ["Environmental data received"]
-
-    # ========================================================
-    # SAVE ENVIRONMENTAL DATA
-    # ========================================================
 
     env = EnvironmentalData(
         location_id=location.id,
@@ -49,41 +48,24 @@ def run_risk_pipeline(
 
     steps.append("Environmental data saved")
 
-    # ========================================================
-    # AI / ML RISK ENGINE
-    # ========================================================
-
     engine = get_risk_engine()
 
     result = engine.predict(
         RiskFeatures(
-            # Current rainfall from the previous 24 hours.
             rainfall=env.rainfall,
-
-            # Antecedent rainfall from Open-Meteo.
             rainfall_72h=getattr(sample, "rainfall_72h", 0.0),
             rainfall_7d=getattr(sample, "rainfall_7d", 0.0),
-
-            # Current environmental conditions.
             soil_moisture=env.soil_moisture,
             humidity=env.humidity,
             temperature=env.temperature,
-
-            # Terrain information.
             slope_angle=env.slope_angle,
             elevation=location.elevation,
-
-            # Historical landslide information.
             historical_factor=location.historical_landslide_factor,
         ),
         location=location,
     )
 
     steps.append("AI risk engine executed")
-
-    # ========================================================
-    # SATELLITE INTELLIGENCE
-    # ========================================================
 
     satellite = get_satellite_intelligence(
         location=location,
@@ -96,9 +78,18 @@ def run_risk_pipeline(
         f"Satellite intelligence analysed: {satellite.status}"
     )
 
-    # ========================================================
-    # SAVE SATELLITE OBSERVATION
-    # ========================================================
+    hybrid_risk = calculate_hybrid_risk(
+        ml_score=result.score,
+        satellite_score=satellite.satellite_risk,
+        satellite_data_mode=satellite.data_mode,
+        freshness_status=satellite.freshness_status,
+    )
+
+    steps.append(
+        f"Hybrid risk calculated: "
+        f"{hybrid_risk.level} "
+        f"({hybrid_risk.score})"
+    )
 
     satellite_observation = SatelliteObservation(
         location_id=location.id,
@@ -117,14 +108,10 @@ def run_risk_pipeline(
 
     steps.append("Satellite observation saved")
 
-    # ========================================================
-    # SAVE RISK PREDICTION
-    # ========================================================
-
     prediction = RiskPrediction(
         location_id=location.id,
-        risk_score=result.score,
-        risk_level=result.level,
+        risk_score=hybrid_risk.score,
+        risk_level=hybrid_risk.level,
         confidence=result.confidence,
         contributing_factors=json.dumps(result.factors),
         prediction_time=env.timestamp,
@@ -133,17 +120,13 @@ def run_risk_pipeline(
     db.add(prediction)
     db.flush()
 
-    steps.append("Risk prediction saved")
-
-    # ========================================================
-    # ROAD INTELLIGENCE
-    # ========================================================
+    steps.append("Hybrid risk prediction saved")
 
     updated_roads = update_roads_from_risk(
         db=db,
         location=location,
-        risk_score=result.score,
-        risk_level=result.level,
+        risk_score=hybrid_risk.score,
+        risk_level=hybrid_risk.level,
     )
 
     if updated_roads:
@@ -164,15 +147,11 @@ def run_risk_pipeline(
             "Road connectivity checked - no status change"
         )
 
-    # ========================================================
-    # ALERT PROCESSING
-    # ========================================================
-
     alert, is_new, sms = process_alert(
         db,
         location,
-        result.score,
-        result.level,
+        hybrid_risk.score,
+        hybrid_risk.level,
         result.factors,
     )
 
@@ -194,14 +173,10 @@ def run_risk_pipeline(
             "Risk below alert threshold - no alert needed"
         )
 
-    # ========================================================
-    # EMERGENCY PRIORITY
-    # ========================================================
-
     priority = compute_priority(
         db,
         location,
-        result.score,
+        hybrid_risk.score,
     )
 
     steps.append(
@@ -209,31 +184,19 @@ def run_risk_pipeline(
         f"{priority.priority_level}"
     )
 
-    # ========================================================
-    # COMMIT DATABASE
-    # ========================================================
-
     db.commit()
-
-    # ========================================================
-    # RETURN PIPELINE RESULT
-    # ========================================================
 
     return {
         "environment": env,
         "prediction": prediction,
         "risk": result,
-
+        "hybrid_risk": hybrid_risk,
         "satellite": satellite,
         "satellite_observation": satellite_observation,
-
         "alert": alert,
         "alert_generated": is_new,
         "sms_log": sms,
-
         "priority": priority,
-
         "updated_roads": updated_roads,
-
         "steps": steps,
     }

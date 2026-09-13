@@ -1,32 +1,32 @@
-"""Risk endpoints: zones, detail, history and the aggregate trend.
+"""
+Risk endpoints: zones, detail, history and aggregate trend.
 
-IMPORTANT: literal routes (/zones, /zones/summary, /trend/overview)
-are declared BEFORE the parameterised /{location_id} routes so FastAPI
-never tries to parse a word like "trend" as an integer.
+IMPORTANT:
+Literal routes are declared BEFORE parameterised routes.
 """
 
 from datetime import timedelta
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Location, RiskPrediction
-from ..ml.risk_model import predict_landslide_risk
 from ..schemas.environment import EnvironmentalDataOut
 from ..schemas.location import LocationOut
 from ..schemas.risk import RiskPredictionOut
-
+from ..services.pipeline import run_risk_pipeline
 from ..utils.queries import (
     latest_environment_by_location,
     latest_risk_by_location,
 )
 
-from ..services.alert_service import process_alert
-from ..services.emergency_service import compute_priority
 
-
-router = APIRouter(prefix="/risk", tags=["risk"])
+router = APIRouter(
+    prefix="/risk",
+    tags=["risk"],
+)
 
 
 # ==========================================================
@@ -70,60 +70,65 @@ def _build_zones(
 
         env = env_map.get(loc.id)
 
-        zones.append({
-            "location_id": loc.id,
-            "name": loc.name,
-            "district": loc.district,
-            "state": loc.state,
+        zones.append(
+            {
+                "location_id": loc.id,
+                "name": loc.name,
+                "district": loc.district,
+                "state": loc.state,
+                "latitude": loc.latitude,
+                "longitude": loc.longitude,
+                "elevation": loc.elevation,
 
-            "latitude": loc.latitude,
-            "longitude": loc.longitude,
-            "elevation": loc.elevation,
+                "historical_landslide_factor":
+                    loc.historical_landslide_factor,
 
-            "historical_landslide_factor":
-                loc.historical_landslide_factor,
+                "population_factor":
+                    loc.population_factor,
 
-            "population_factor":
-                loc.population_factor,
+                "isolation_factor":
+                    loc.isolation_factor,
 
-            "isolation_factor":
-                loc.isolation_factor,
+                "risk_score":
+                    pred.risk_score if pred else 0.0,
 
-            "risk_score":
-                pred.risk_score if pred else 0.0,
+                "risk_level":
+                    pred.risk_level if pred else "LOW",
 
-            "risk_level":
-                pred.risk_level if pred else "LOW",
+                "confidence":
+                    pred.confidence if pred else 0.0,
 
-            "confidence":
-                pred.confidence if pred else 0.0,
+                "rainfall":
+                    env.rainfall if env else None,
 
-            "rainfall":
-                env.rainfall if env else None,
+                "soil_moisture":
+                    env.soil_moisture if env else None,
 
-            "soil_moisture":
-                env.soil_moisture if env else None,
+                "humidity":
+                    env.humidity if env else None,
 
-            "humidity":
-                env.humidity if env else None,
+                "slope_angle":
+                    env.slope_angle
+                    if env
+                    else loc.slope_angle,
 
-            "slope_angle":
-                env.slope_angle
-                if env
-                else loc.slope_angle,
+                "temperature":
+                    env.temperature if env else None,
 
-            "temperature":
-                env.temperature if env else None,
+                "scenario":
+                    env.scenario if env else None,
 
-            "scenario":
-                env.scenario if env else None,
+                "prediction_time":
+                    pred.prediction_time
+                    if pred
+                    else None,
 
-            "prediction_time":
-                pred.prediction_time if pred else None,
-
-            "last_updated":
-                env.timestamp if env else None,
-        })
+                "last_updated":
+                    env.timestamp
+                    if env
+                    else None,
+            }
+        )
 
     zones.sort(
         key=lambda z: z["risk_score"],
@@ -139,19 +144,10 @@ def _build_zones(
 
 @router.get("/zones")
 def risk_zones(
-
-    state: str | None = Query(
-        default=None
-    ),
-
-    level: str | None = Query(
-        default=None
-    ),
-
+    state: str | None = Query(default=None),
+    level: str | None = Query(default=None),
     db: Session = Depends(get_db),
-
 ):
-    """Current risk overview for every active location."""
 
     return _build_zones(
         db,
@@ -168,7 +164,6 @@ def risk_zones(
 def risk_zone_summary(
     db: Session = Depends(get_db),
 ):
-    """Counts per risk level."""
 
     zones = _build_zones(
         db,
@@ -202,7 +197,6 @@ def risk_zone_summary(
 def risk_trend(
     db: Session = Depends(get_db),
 ):
-    """Aggregated recent risk across all locations."""
 
     latest = (
         db.query(RiskPrediction)
@@ -251,7 +245,6 @@ def risk_trend(
         )
 
     return [
-
         {
             "time": key,
 
@@ -268,10 +261,8 @@ def risk_trend(
             ),
         }
 
-        for key, values in sorted(
-            buckets.items()
-        )
-
+        for key, values
+        in sorted(buckets.items())
     ]
 
 
@@ -281,32 +272,9 @@ def risk_trend(
 
 @router.post("/{location_id}/predict")
 def predict_location_risk(
-
     location_id: int,
-
     db: Session = Depends(get_db),
-
 ):
-    """
-    Run the ML risk engine using the latest
-    environmental data for one location.
-
-    Pipeline:
-
-    Environmental Data
-            ↓
-    ML Risk Prediction
-            ↓
-    Alert Engine
-            ↓
-    SMS Warning
-            ↓
-    Emergency Priority
-    """
-
-    # ------------------------------------------------------
-    # GET LOCATION
-    # ------------------------------------------------------
 
     location = db.get(
         Location,
@@ -320,13 +288,7 @@ def predict_location_risk(
             detail="Location not found",
         )
 
-    # ------------------------------------------------------
-    # GET LATEST ENVIRONMENTAL DATA
-    # ------------------------------------------------------
-
-    env_map = latest_environment_by_location(
-        db
-    )
+    env_map = latest_environment_by_location(db)
 
     env = env_map.get(
         location_id
@@ -342,123 +304,106 @@ def predict_location_risk(
             ),
         )
 
-    # ------------------------------------------------------
-    # RUN ML MODEL
-    # ------------------------------------------------------
+    sample = SimpleNamespace(
 
-    result = predict_landslide_risk(
+        rainfall=env.rainfall or 0.0,
 
-        rainfall=env.rainfall or 0,
+        soil_moisture=
+            env.soil_moisture or 0.0,
 
-        soil_moisture=(
-            env.soil_moisture or 0
-        ),
+        temperature=
+            env.temperature or 0.0,
+
+        humidity=
+            env.humidity or 0.0,
 
         slope_angle=(
             env.slope_angle
             or location.slope_angle
-            or 0
+            or 0.0
         ),
 
+        scenario=
+            env.scenario or "NORMAL",
+
+        rainfall_72h=0.0,
+
+        rainfall_7d=0.0,
     )
 
-    # ------------------------------------------------------
-    # SAVE RISK PREDICTION
-    # ------------------------------------------------------
-
-    prediction = RiskPrediction(
-
-        location_id=location.id,
-
-        risk_score=result["risk_score"],
-
-        risk_level=result["risk_level"],
-
-        confidence=result["confidence"],
-
-        contributing_factors=str(
-            result["contributing_factors"]
-        ),
-
-    )
-
-    db.add(prediction)
-
-    # Make prediction available inside
-    # the current transaction.
-    db.flush()
-
-    # ------------------------------------------------------
-    # EARLY WARNING ALERT PIPELINE
-    # ------------------------------------------------------
-
-    alert, alert_generated, sms = process_alert(
+    pipeline = run_risk_pipeline(
 
         db=db,
 
         location=location,
 
-        risk_score=result["risk_score"],
-
-        risk_level=result["risk_level"],
-
-        factors=result["contributing_factors"],
-
+        sample=sample,
     )
 
-    # ------------------------------------------------------
-    # EMERGENCY RESPONSE PRIORITY
-    # ------------------------------------------------------
+    prediction = pipeline["prediction"]
 
-    priority = compute_priority(
+    hybrid_risk = pipeline["hybrid_risk"]
 
-        db=db,
+    satellite = pipeline["satellite"]
 
-        location=location,
+    alert = pipeline["alert"]
 
-        risk_score=result["risk_score"],
+    priority = pipeline["priority"]
 
-    )
-
-    # ------------------------------------------------------
-    # COMMIT EVERYTHING
-    # ------------------------------------------------------
-
-    db.commit()
-
-    db.refresh(prediction)
-
-    # ------------------------------------------------------
-    # RESPONSE
-    # ------------------------------------------------------
+    sms = pipeline["sms_log"]
 
     return {
 
-        "location": location.name,
+        "location":
+            location.name,
 
-        "location_id": location.id,
+        "location_id":
+            location.id,
 
         "prediction":
             RiskPredictionOut.from_row(
                 prediction
             ),
 
+        "hybrid_risk":
+            hybrid_risk.as_dict(),
+
+        "satellite": {
+
+            "risk_score":
+                satellite.satellite_risk,
+
+            "status":
+                satellite.status,
+
+            "source":
+                satellite.source,
+
+            "data_mode":
+                satellite.data_mode,
+
+            "freshness_status":
+                satellite.freshness_status,
+        },
+
         "alert_generated":
-            alert_generated,
+            pipeline["alert_generated"],
 
         "alert": (
 
             {
                 "id": alert.id,
+
                 "risk_level":
                     alert.risk_level,
+
                 "status":
                     alert.status,
             }
 
             if alert
-            else None
 
+            else None
         ),
 
         "sms": (
@@ -480,8 +425,8 @@ def predict_location_risk(
             }
 
             if sms
-            else None
 
+            else None
         ),
 
         "emergency_priority": {
@@ -494,9 +439,13 @@ def predict_location_risk(
 
             "reason":
                 priority.reason,
-
         },
 
+        "updated_roads":
+            pipeline["updated_roads"],
+
+        "pipeline_steps":
+            pipeline["steps"],
     }
 
 
@@ -506,40 +455,18 @@ def predict_location_risk(
 
 @router.post("/predict-all")
 def predict_all_locations(
-
     db: Session = Depends(get_db),
-
 ):
-    """
-    Run the complete prediction pipeline
-    for all active locations.
-
-    Pipeline:
-
-    ML Prediction
-        ↓
-    Alert Generation
-        ↓
-    SMS Warning
-        ↓
-    Emergency Priority
-    """
 
     locations = (
-
         db.query(Location)
-
         .filter(
             Location.is_active.is_(True)
         )
-
         .all()
-
     )
 
-    env_map = latest_environment_by_location(
-        db
-    )
+    env_map = latest_environment_by_location(db)
 
     results = []
 
@@ -550,180 +477,122 @@ def predict_all_locations(
     sms_sent = 0
 
 
-    # ------------------------------------------------------
-    # PROCESS EACH LOCATION
-    # ------------------------------------------------------
-
     for location in locations:
 
         env = env_map.get(
             location.id
         )
 
-        # Skip locations with no environmental data.
-
         if not env:
 
-            skipped.append({
+            skipped.append(
+                {
+                    "location_id":
+                        location.id,
 
-                "location_id":
-                    location.id,
+                    "name":
+                        location.name,
 
-                "name":
-                    location.name,
-
-                "reason":
-                    "No environmental data",
-
-            })
+                    "reason":
+                        "No environmental data",
+                }
+            )
 
             continue
 
 
-        # --------------------------------------------------
-        # RUN ML MODEL
-        # --------------------------------------------------
+        sample = SimpleNamespace(
 
-        result = predict_landslide_risk(
+            rainfall=
+                env.rainfall or 0.0,
 
-            rainfall=env.rainfall or 0,
+            soil_moisture=
+                env.soil_moisture or 0.0,
 
-            soil_moisture=(
-                env.soil_moisture or 0
-            ),
+            temperature=
+                env.temperature or 0.0,
+
+            humidity=
+                env.humidity or 0.0,
 
             slope_angle=(
-
                 env.slope_angle
                 or location.slope_angle
-                or 0
-
+                or 0.0
             ),
 
+            scenario=
+                env.scenario or "NORMAL",
+
+            rainfall_72h=0.0,
+
+            rainfall_7d=0.0,
         )
 
 
-        # --------------------------------------------------
-        # SAVE PREDICTION
-        # --------------------------------------------------
-
-        prediction = RiskPrediction(
-
-            location_id=location.id,
-
-            risk_score=result["risk_score"],
-
-            risk_level=result["risk_level"],
-
-            confidence=result["confidence"],
-
-            contributing_factors=str(
-
-                result[
-                    "contributing_factors"
-                ]
-
-            ),
-
-        )
-
-        db.add(prediction)
-
-        db.flush()
-
-
-        # --------------------------------------------------
-        # PROCESS ALERT
-        # --------------------------------------------------
-
-        alert, alert_generated, sms = process_alert(
+        pipeline = run_risk_pipeline(
 
             db=db,
 
             location=location,
 
-            risk_score=result["risk_score"],
-
-            risk_level=result["risk_level"],
-
-            factors=result[
-                "contributing_factors"
-            ],
-
+            sample=sample,
         )
 
 
-        if alert_generated:
+        prediction = pipeline["prediction"]
+
+        priority = pipeline["priority"]
+
+
+        if pipeline["alert_generated"]:
 
             alerts_generated += 1
 
 
-        if sms:
+        if pipeline["sms_log"]:
 
             sms_sent += 1
 
 
-        # --------------------------------------------------
-        # EMERGENCY PRIORITY
-        # --------------------------------------------------
+        results.append(
 
-        priority = compute_priority(
+            {
+                "location_id":
+                    location.id,
 
-            db=db,
+                "location":
+                    location.name,
 
-            location=location,
+                "risk_score":
+                    prediction.risk_score,
 
-            risk_score=result[
-                "risk_score"
-            ],
+                "risk_level":
+                    prediction.risk_level,
 
+                "alert_generated":
+                    pipeline["alert_generated"],
+
+                "sms_sent":
+                    pipeline["sms_log"]
+                    is not None,
+
+                "priority_level":
+                    priority.priority_level,
+
+                "priority_score":
+                    priority.priority_score,
+
+                "updated_roads":
+                    pipeline["updated_roads"],
+            }
         )
-
-
-        # --------------------------------------------------
-        # STORE RESULT
-        # --------------------------------------------------
-
-        results.append({
-
-            "location_id":
-                location.id,
-
-            "location":
-                location.name,
-
-            "risk_score":
-                result["risk_score"],
-
-            "risk_level":
-                result["risk_level"],
-
-            "alert_generated":
-                alert_generated,
-
-            "sms_sent":
-                sms is not None,
-
-            "priority_level":
-                priority.priority_level,
-
-            "priority_score":
-                priority.priority_score,
-
-        })
-
-
-    # ------------------------------------------------------
-    # SAVE EVERYTHING
-    # ------------------------------------------------------
-
-    db.commit()
 
 
     return {
 
         "message":
-            "Complete landslide prediction pipeline completed",
+            "Complete hybrid landslide prediction pipeline completed",
 
         "locations_processed":
             len(results),
@@ -742,7 +611,6 @@ def predict_all_locations(
 
         "skipped":
             skipped,
-
     }
 
 
@@ -762,19 +630,20 @@ def risk_history(
     ),
 
     db: Session = Depends(get_db),
-
 ):
-    """Time series of past predictions."""
 
-    if not db.get(
+    location = db.get(
         Location,
         location_id,
-    ):
+    )
+
+    if not location:
 
         raise HTTPException(
             status_code=404,
             detail="Location not found",
         )
+
 
     rows = (
 
@@ -792,17 +661,17 @@ def risk_history(
         .limit(limit)
 
         .all()
-
     )
 
+
     rows.reverse()
+
 
     return [
 
         RiskPredictionOut.from_row(row)
 
         for row in rows
-
     ]
 
 
@@ -816,17 +685,13 @@ def risk_detail(
     location_id: int,
 
     db: Session = Depends(get_db),
-
 ):
-    """
-    Location + latest environmental data
-    + latest risk prediction.
-    """
 
     location = db.get(
         Location,
         location_id,
     )
+
 
     if not location:
 
@@ -835,36 +700,27 @@ def risk_detail(
             detail="Location not found",
         )
 
+
     env = (
-
-        latest_environment_by_location(
-            db
-        )
-
+        latest_environment_by_location(db)
         .get(location_id)
-
     )
 
+
     pred = (
-
-        latest_risk_by_location(
-            db
-        )
-
+        latest_risk_by_location(db)
         .get(location_id)
-
     )
 
 
     return {
 
         "location":
-
             LocationOut.model_validate(
                 location
             ),
 
-        "environment":
+        "environment": (
 
             EnvironmentalDataOut.model_validate(
                 env
@@ -872,9 +728,10 @@ def risk_detail(
 
             if env
 
-            else None,
+            else None
+        ),
 
-        "risk":
+        "risk": (
 
             RiskPredictionOut.from_row(
                 pred
@@ -882,6 +739,6 @@ def risk_detail(
 
             if pred
 
-            else None,
-
+            else None
+        ),
     }
